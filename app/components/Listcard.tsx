@@ -23,11 +23,12 @@ export const ListCard = ({ title, date, desc, num, setCards }: ListCardProps) =>
   let cards = localStorage.getItem("Cards") || "";
   if (!cards) return;
 
-  const updated = cards
+  const filteredCards = cards
     .split("$$")
     .filter((_, i) => i !== num)
-    .filter(Boolean)
-    .join("$$");
+    .filter(Boolean);
+  
+  const updated = filteredCards.length > 0 ? filteredCards.join("$$") + "$$" : "";
   console.log(updated);
   localStorage.setItem("Cards", updated);
    setCards(updated);
