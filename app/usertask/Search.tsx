@@ -1,92 +1,146 @@
 "use client"
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { SubtaskStorage } from "../types/todo";
 
-
-
-export default function Search()
-{
+export default function Search() {
     const params = useSearchParams();
     const titleKey = params.get("title") || "";
 
-    const [myArr, setMyArr] = useState<string[]>([]);
+    const [subtasks, setSubtasks] = useState<string[]>([]);
+    const [errors, setErrors] = useState<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        const stored = localStorage.getItem(titleKey) || "";
-        const arr = stored.split("%%").filter(Boolean);
-        setMyArr(arr);
+        if (titleKey) {
+            // Migrate any legacy subtask data
+            SubtaskStorage.migrateLegacySubtasks();
+            setSubtasks(SubtaskStorage.getSubtasks(titleKey));
+        }
     }, [titleKey]);
-    function    delete_item(text:string)
-    {
-        let index:number  = myArr.findIndex((e)=> text === e);
 
-        const item1 = myArr.slice(0, index);
-        const item2 = myArr.slice(index + 1);
+    const validateSubtask = (text: string): boolean => {
+        const trimmed = text.trim();
+        if (!trimmed) {
+            setErrors(["Subtask cannot be empty"]);
+            return false;
+        }
+        if (trimmed.length > 200) {
+            setErrors(["Subtask must be less than 200 characters"]);
+            return false;
+        }
+        if (subtasks.includes(trimmed)) {
+            setErrors(["This subtask already exists"]);
+            return false;
+        }
+        setErrors([]);
+        return true;
+    };
 
-        console.log(item1, item2);
-        const updated = [...item1, ...item2];
-        setMyArr(updated);
-        localStorage.setItem(titleKey, updated.join("%%"));
-    }
+    const deleteSubtask = (text: string) => {
+        if (window.confirm(`Delete subtask: "${text}"?`)) {
+            SubtaskStorage.deleteSubtask(titleKey, text);
+            setSubtasks(SubtaskStorage.getSubtasks(titleKey));
+        }
+    };
 
-    function renderItem(text: string, index: number) {
+    const addSubtask = () => {
+        const value = inputRef.current?.value?.trim();
+        if (!value) return;
+
+        if (!validateSubtask(value)) return;
+
+        try {
+            SubtaskStorage.addSubtask(titleKey, value);
+            setSubtasks(SubtaskStorage.getSubtasks(titleKey));
+            if (inputRef.current) inputRef.current.value = "";
+            setErrors([]);
+        } catch (error) {
+            console.error("Error adding subtask:", error);
+            setErrors(["Failed to add subtask"]);
+        }
+    };
+
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            addSubtask();
+        }
+    };
+
+    const renderSubtask = (text: string, index: number) => {
         return (
-            <div key={index} className="flex justify-between items-center font-bold text-lg">
-                <div>{text}</div>
-                <div className="rounded-lg p-1 bg-red-700 font-bold text-white px-3 cursor-pointer" onClick={()=> delete_item(text)}>
-                    X
+            <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
+                <div className="flex-1 font-medium text-gray-800">{text}</div>
+                <button
+                    className="ml-3 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
+                    onClick={() => deleteSubtask(text)}
+                    title="Delete subtask"
+                >
+                    Delete
+                </button>
+            </div>
+        );
+    };
+
+    if (!titleKey) {
+        return (
+            <div className="w-full h-screen bg-gray-100 flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">No Todo Selected</h2>
+                    <p className="text-gray-600">Please select a todo item to manage its subtasks.</p>
                 </div>
             </div>
         );
     }
-    function    checker(): boolean
-    {
-        const   temp:string = inputRef.current?.value || "";
-        for (let i:number = 0; i < temp.length; i++)
-        {
-            if (temp[i] == '%' && temp[i + 1] == '%')
-            {
-                alert("this delmeter %% dosent suported print percent instead or use one %");
-                return false;
-            }
-            i++;
-        }
-        return true;
-    }
-    function submitted() {
-        if (!inputRef.current?.value) return;
-        if (checker() == false) return ;
-        const newTask = inputRef.current.value;
-
-        const updated = [...myArr, newTask];
-
-        setMyArr(updated);
-
-        localStorage.setItem(titleKey, updated.join("%%"));
-
-        inputRef.current.value = "";
-    }
 
     return (
-        <div className="w-full h-screen bg-gray-100 flex flex-col justify-center items-center select-none ">
-            <div className="max-w-300 w-100 bg-white shadow-2xl min-h-40 rounded-lg p-4">
-                <div className="flex justify-center">
+        <div className="w-full min-h-screen bg-gray-100 flex flex-col items-center py-8 px-4">
+            <div className="max-w-2xl w-full bg-white shadow-xl rounded-lg p-6">
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold text-gray-800 mb-2">Manage Subtasks</h1>
+                    <p className="text-gray-600">Todo: <span className="font-semibold">{titleKey}</span></p>
+                </div>
+
+                {errors.length > 0 && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <ul className="text-red-700 text-sm">
+                            {errors.map((error, index) => (
+                                <li key={index}>• {error}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                <div className="flex gap-2 mb-6">
                     <input
                         ref={inputRef}
                         type="text"
-                        className="w-full px-5 bg-gray-50 border-gray-50 focus:outline-1 focus:outline-gray-400 rounded-l-lg"
+                        placeholder="Add a new subtask..."
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={handleKeyPress}
+                        maxLength={200}
                     />
                     <button
-                        className="px-8 text-lg font-bold text-gray-200 py-3 bg-gray-800 outline-1 cursor-pointer active:bg-gray-600 rounded-r-lg"
-                        onClick={submitted}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                        onClick={addSubtask}
                     >
                         Add
                     </button>
                 </div>
 
-                <div className="mt-8 flex flex-col gap-5 px-5 space-y-2">
-                    {myArr.map(renderItem)}
+                <div className="space-y-3">
+                    {subtasks.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No subtasks yet. Add your first subtask above!
+                        </div>
+                    ) : (
+                        <>
+                            <h3 className="text-lg font-semibold text-gray-700 mb-3">
+                                Subtasks ({subtasks.length})
+                            </h3>
+                            {subtasks.map(renderSubtask)}
+                        </>
+                    )}
                 </div>
             </div>
         </div>
